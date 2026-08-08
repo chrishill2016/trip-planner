@@ -22,12 +22,11 @@
   --rule:#CBD3C8; --line:#1F7A8C; --warn:#A32B1C;
 }
 *,*::before,*::after{box-sizing:border-box;}
-html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden;}
+html,body{margin:0;padding:0;}
 body{
   background:var(--paper); color:var(--ink); min-height:100vh;
   font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
   -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
-  overscroll-behavior-y:none;
 }
 button{font-family:inherit;}
 .wrap{padding:calc(14px + env(safe-area-inset-top)) 14px 108px;}
@@ -63,8 +62,8 @@ button{font-family:inherit;}
 .cta{width:100%;min-height:52px;font-size:13px;}
 
 /* ---- day strip ---- */
-.strip-outer{margin:16px -14px 0;padding:0 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;
-  scroll-snap-type:x proximity;}
+.strip-outer{margin:16px -14px 0;padding:0 14px 4px;overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;scroll-snap-type:x proximity;touch-action:pan-x pan-y;}
 .strip-outer::-webkit-scrollbar{display:none;}
 .strip{position:relative;display:flex;width:max-content;padding:14px 0 6px;}
 .strip::before{content:'';position:absolute;left:16px;right:16px;top:20px;height:2px;background:var(--rule);}
@@ -899,7 +898,8 @@ function renderHeader(){
 
 function render(){
   const app = document.getElementById("app");
-  const y = window.scrollY;
+  const se = document.scrollingElement || document.documentElement;
+  const y = se.scrollTop;
   app.textContent = "";
   const t = state.trip;
   const wrap = h("div",{class:"wrap"});
@@ -1011,7 +1011,7 @@ function render(){
     h("button",{class:"btn ghost",onclick:openShare},["Share"])
   ]));
 
-  window.scrollTo(0, y);
+  if(y) se.scrollTop = y;
 }
 
 function goToDay(d){
