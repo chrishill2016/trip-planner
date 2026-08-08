@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trip Planner</title>
+<meta name="description" content="Plan a trip day by day — ideas, restaurants and links on a route.">
+<meta name="theme-color" content="#E7EBE4">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --ink:#16233B; --ink2:#5A6870; --paper:#E7EBE4; --card:#FCFDFA;
+  --rule:#CBD3C8; --line:#1F7A8C;
+}
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--paper); color:var(--ink); min-height:100vh;
+  font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+  overscroll-behavior-y:none;
+}
+button{font-family:inherit;}
+.wrap{max-width:1120px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top)) 16px 120px;}
+.eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink2);margin:0;}
+
+/* header */
+.name{width:100%;border:0;background:transparent;color:var(--ink);font-family:inherit;
+  font-size:clamp(28px,7vw,44px);font-weight:700;letter-spacing:-.03em;line-height:1.05;
+  padding:4px 0;margin:6px 0 2px;}
+.name::placeholder{color:#A8B2A6;}
+.meta{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-top:12px;}
+.field{display:flex;align-items:center;gap:8px;}
+.field label{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);
+  font-family:'IBM Plex Mono',monospace;}
+.date{font-family:'IBM Plex Mono',monospace;font-size:16px;color:var(--ink);background:var(--card);
+  border:1px solid var(--rule);border-radius:6px;padding:9px 10px;min-height:44px;}
+.step{display:flex;align-items:center;border:1px solid var(--rule);border-radius:6px;
+  background:var(--card);overflow:hidden;min-height:44px;}
+.step button{width:42px;align-self:stretch;border:0;background:transparent;cursor:pointer;
+  color:var(--ink);font-size:19px;line-height:1;}
+.step button:active{background:#E2E7DE;}
+.step span{min-width:34px;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:15px;}
+
+/* buttons */
+.btn{border:1.5px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer;
+  font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.06em;text-transform:uppercase;
+  padding:0 16px;min-height:44px;border-radius:6px;white-space:nowrap;}
+.btn:active{background:#25365A;}
+.btn[disabled]{opacity:.35;cursor:not-allowed;}
+.btn.ghost{background:transparent;color:var(--ink2);border-color:var(--rule);}
+.btn.ghost:active{background:#E2E7DE;color:var(--ink);}
+.cta{width:100%;min-height:54px;font-size:14px;}
+
+/* day strip */
+.strip-outer{margin:24px -16px 0;padding:0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.strip{position:relative;display:flex;min-width:min-content;padding:16px 0 8px;}
+.strip::before{content:'';position:absolute;left:18px;right:18px;top:22px;height:2px;background:var(--rule);}
+.stop{position:relative;background:transparent;border:0;cursor:pointer;padding:0 12px 6px;
+  display:flex;flex-direction:column;align-items:center;gap:9px;min-width:84px;}
+.dot{width:14px;height:14px;border-radius:50%;border:2.5px solid var(--rule);background:var(--card);
+  box-shadow:0 0 0 5px var(--paper);}
+.stop[data-active="true"] .dot{transform:scale(1.3);}
+.stop-label{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink2);white-space:nowrap;
+  text-align:center;line-height:1.5;}
+.stop[data-active="true"] .stop-label{color:var(--ink);font-weight:600;}
+.stop-count{display:block;font-size:10px;opacity:.75;}
+
+/* tabs */
+.tabs{display:none;gap:8px;margin-top:20px;}
+.tab{flex:1;min-height:46px;border-radius:7px;border:1.5px solid var(--rule);background:var(--card);
+  color:var(--ink2);font-family:'IBM Plex Mono',monospace;font-size:13px;cursor:pointer;}
+.tab[data-on="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+/* columns */
+.cols{display:grid;grid-template-columns:310px 1fr;gap:26px;margin-top:26px;align-items:start;}
+.colhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding-bottom:8px;border-bottom:2px solid var(--ink);margin-bottom:14px;}
+.colhead h2{margin:0;font-size:15px;font-weight:700;}
+
+/* days */
+.day{margin-bottom:28px;scroll-margin-top:12px;}
+.dayhead{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.daynum{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.1em;
+  color:var(--card);background:var(--line);padding:4px 9px;border-radius:3px;}
+.daydate{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink2);}
+.track{position:relative;padding-left:28px;}
+.track::before{content:'';position:absolute;left:6px;top:6px;bottom:26px;width:2px;
+  background:var(--line);opacity:.35;}
+.band{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink2);margin:14px 0 7px;}
+.band:first-child{margin-top:0;}
+.addhere{width:100%;min-height:46px;margin-top:8px;border:1.5px dashed var(--rule);background:transparent;
+  border-radius:7px;color:var(--ink2);cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+.addhere:active{background:#E2E7DE;color:var(--ink);}
+
+/* items */
+.item{position:relative;background:var(--card);border:1px solid var(--rule);border-radius:8px;
+  margin-bottom:9px;}
+.item-main{display:flex;align-items:flex-start;gap:10px;width:100%;background:none;border:0;
+  text-align:left;padding:13px 12px;cursor:pointer;color:inherit;}
+.node{position:absolute;left:-28px;top:16px;width:14px;height:14px;background:var(--card);
+  border:2.5px solid var(--line);box-shadow:0 0 0 4px var(--paper);}
+.node.circle{border-radius:50%;}
+.node.square{border-radius:2px;}
+.node.diamond{border-radius:2px;transform:rotate(45deg);}
+.node.bar{height:8px;top:19px;border-radius:5px;}
+.node[data-booked="true"]{background:var(--line);}
+.item-title{font-size:16px;font-weight:500;line-height:1.35;word-break:break-word;}
+.sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink2);margin-top:4px;
+  word-break:break-word;}
+.note{font-size:13px;color:var(--ink2);margin-top:5px;line-height:1.45;}
+.caret{flex:0 0 auto;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink2);padding-top:3px;}
+.panel{border-top:1px solid var(--rule);padding:12px;display:flex;flex-direction:column;gap:12px;}
+.panel-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink2);margin:0 0 7px;}
+.actions{display:flex;gap:8px;flex-wrap:wrap;}
+.actions button{flex:1 1 auto;min-width:96px;min-height:46px;border-radius:7px;border:1.5px solid var(--rule);
+  background:var(--card);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:12px;cursor:pointer;}
+.actions button:active{background:#E2E7DE;}
+.actions button[data-on="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+.actions button[data-danger="true"]{color:#A32B1C;border-color:#E2C4BE;}
+.openlink{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);
+  text-decoration:underline;text-underline-offset:3px;padding:6px 0;}
+
+/* pills */
+.pillrow{display:flex;gap:8px;overflow-x:auto;padding:2px 0 6px;-webkit-overflow-scrolling:touch;}
+.pillwrap{display:flex;gap:8px;flex-wrap:wrap;}
+.pill{flex:0 0 auto;min-height:46px;padding:0 15px;border-radius:7px;border:1.5px solid var(--rule);
+  background:var(--card);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:13px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.35;}
+.pill:active{background:#E2E7DE;}
+.pill[data-on="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+.pill small{font-size:10px;opacity:.75;}
+.pilldot{width:8px;height:8px;border-radius:50%;margin-bottom:3px;}
+
+.empty{border:1.5px dashed var(--rule);border-radius:8px;padding:14px;font-size:13px;color:var(--ink2);
+  line-height:1.5;}
+
+/* dock */
+.dock{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;
+  padding:12px 16px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,var(--paper) 62%,rgba(231,235,228,0));}
+
+/* sheet */
+.backdrop{position:fixed;inset:0;z-index:60;background:rgba(22,35,59,.5);display:flex;
+  align-items:flex-end;justify-content:center;}
+.sheet{background:var(--paper);width:100%;max-width:620px;border-radius:16px 16px 0 0;max-height:92vh;
+  display:flex;flex-direction:column;}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px;
+  border-bottom:1px solid var(--rule);}
+.sheet-head h3{margin:0;font-size:17px;font-weight:700;}
+.x{border:0;background:transparent;color:var(--ink2);font-size:24px;line-height:1;width:44px;height:44px;
+  cursor:pointer;}
+.sheet-body{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:20px;
+  -webkit-overflow-scrolling:touch;}
+.sheet-foot{padding:12px 16px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--rule);
+  background:var(--card);}
+.bigin{width:100%;font-family:inherit;font-size:17px;color:var(--ink);background:var(--card);
+  border:1.5px solid var(--rule);border-radius:8px;padding:13px 12px;}
+.bigin::placeholder{color:#9AA69B;}
+textarea.bigin{resize:vertical;min-height:70px;line-height:1.5;}
+textarea.share{min-height:260px;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.6;}
+
+/* toast */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom));
+  background:var(--ink);color:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:12px;
+  padding:11px 16px;border-radius:8px;z-index:80;max-width:88vw;text-align:center;}
+
+:focus-visible{outline:2px solid #6A4FD8;outline-offset:2px;}
+
+@media (max-width:820px){
+  .cols{grid-template-columns:1fr;gap:0;margin-top:18px;}
+  .tabs{display:flex;}
+  .dock{display:block;}
+  .pane[data-hidden="true"]{display:none;}
+  .hide-mobile{display:none;}
+}
+@media (min-width:821px){
+  .backdrop{align-items:center;padding:20px;}
+  .sheet{border-radius:12px;max-height:84vh;}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="layer"></div>
+
+<script>
+"use strict";
+
+/* ------------------------- constants ------------------------- */
+const KEY = "tripplan.v1";
+const LINES = ["#1F7A8C","#6A4FD8","#B3306B","#3F7D3A","#C77400","#2B5FC4","#8C4A2F","#137D63"];
+const KINDS = [
+  {id:"see",  label:"See",  shape:"circle"},
+  {id:"eat",  label:"Eat",  shape:"square"},
+  {id:"stay", label:"Stay", shape:"diamond"},
+  {id:"move", label:"Move", shape:"bar"},
+];
+const SLOTS = [
+  {id:"morning",   label:"Morning"},
+  {id:"afternoon", label:"Afternoon"},
+  {id:"evening",   label:"Evening"},
+  {id:"flex",      label:"Flexible"},
+];
+
+/* ------------------------- state ------------------------- */
+/* Defaults on first run only — edit them in the app, they're saved from then on. */
+let state = { trip:{name:"Lanzarote", startDate:"2026-08-15", dayCount:12}, items:[] };
+let ui = { pane:"route", activeDay:null, openId:null, confirmId:null };
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){
+      const p = JSON.parse(raw);
+      if(p.trip) Object.assign(state.trip, p.trip);
+      if(Array.isArray(p.items)) state.items = p.items;
+    }
+  }catch(e){ /* corrupt or unavailable — start fresh */ }
+}
+let saveTimer;
+function save(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function(){
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch(e){ toast("Couldn't save — storage may be full or blocked."); }
+  }, 250);
+}
+
+/* ------------------------- helpers ------------------------- */
+function h(tag, props, children){
+  const el = document.createElement(tag);
+  if(props){
+    for(const k in props){
+      const v = props[k];
+      if(v === null || v === undefined || v === false) continue;
+      if(k === "class") el.className = v;
+      else if(k === "text") el.textContent = v;
+      else if(k === "style" && typeof v === "object"){
+        for(const p in v){
+          if(p.slice(0,2) === "--") el.style.setProperty(p, v[p]);
+          else el.style[p] = v[p];
+        }
+      }
+      else if(k.slice(0,2) === "on") el.addEventListener(k.slice(2).toLowerCase(), v);
+      else el.setAttribute(k, v === true ? "true" : v);
+    }
+  }
+  (children || []).forEach(function(c){
+    if(c === null || c === undefined || c === false) return;
+    el.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  });
+  return el;
+}
+const uid = () => Math.random().toString(36).slice(2,9);
+
+function hostOf(raw){
+  try{ return new URL(raw).hostname.replace(/^www\./,""); }catch(e){ return ""; }
+}
+function prettifyUrl(raw){
+  try{
+    const u = new URL(raw);
+    const host = u.hostname.replace(/^www\./,"");
+    const parts = u.pathname.split("/").filter(Boolean);
+    const slug = parts.length ? parts[parts.length-1] : "";
+    const words = decodeURIComponent(slug).replace(/\.(html?|php|aspx)$/i,"").replace(/[-_+]/g," ").trim();
+    if(words && words.length > 2 && !/^\d+$/.test(words)){
+      return words.charAt(0).toUpperCase() + words.slice(1);
+    }
+    return host;
+  }catch(e){ return raw; }
+}
+function dateForDay(startDate, i){
+  if(!startDate) return "";
+  const p = startDate.split("-").map(Number);
+  if(!p[0] || !p[1] || !p[2]) return "";
+  return new Date(p[0], p[1]-1, p[2]+i)
+    .toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
+}
+function kindOf(id){ return KINDS.find(function(k){ return k.id === id; }) || KINDS[0]; }
+function slotLabel(id){ const s = SLOTS.find(function(x){ return x.id === id; }); return s ? s.label : ""; }
+
+let toastTimer;
+function toast(msg){
+  const old = document.querySelector(".toast");
+  if(old) old.remove();
+  const t = h("div",{class:"toast",text:msg});
+  document.body.appendChild(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.remove(); }, 2600);
+}
+
+/* ------------------------- derived ------------------------- */
+function ideas(){ return state.items.filter(function(i){ return i.day === null || i.day === undefined; }); }
+function dayItems(d){
+  return state.items
+    .filter(function(i){ return i.day === d; })
+    .sort(function(a,b){
+      const sa = SLOTS.findIndex(function(s){ return s.id === a.slot; });
+      const sb = SLOTS.findIndex(function(s){ return s.id === b.slot; });
+      if(sa !== sb) return sa - sb;
+      if(a.time && b.time) return a.time.localeCompare(b.time);
+      if(a.time) return -1;
+      if(b.time) return 1;
+      return 0;
+    });
+}
+function update(id, patch){
+  const it = state.items.find(function(i){ return i.id === id; });
+  if(!it) return;
+  Object.assign(it, patch);
+  save(); render();
+}
+function removeItem(id){
+  state.items = state.items.filter(function(i){ return i.id !== id; });
+  ui.openId = null; ui.confirmId = null;
+  save(); render();
+}
+
+/* ------------------------- pills ------------------------- */
+function dayPills(value, onPick){
+  const row = h("div",{class:"pillrow"});
+  row.appendChild(h("button",{
+    class:"pill", "data-on": value === null || value === undefined,
+    onclick:function(){ onPick(null); }
+  },["Ideas"]));
+  for(let d=0; d<state.trip.dayCount; d++){
+    (function(d){
+      const date = dateForDay(state.trip.startDate,d);
+      row.appendChild(h("button",{class:"pill","data-on":value===d,onclick:function(){ onPick(d); }},[
+        h("span",{class:"pilldot",style:{background:LINES[d%LINES.length]}}),
+        document.createTextNode("Day "+(d+1)),
+        date ? h("small",{text:date}) : null
+      ]));
+    })(d);
+  }
+  return row;
+}
+function slotPills(value, onPick){
+  const wrap = h("div",{class:"pillwrap"});
+  SLOTS.forEach(function(s){
+    wrap.appendChild(h("button",{
+      class:"pill","data-on":value===s.id,style:{flex:"1 1 0",minWidth:"84px"},
+      onclick:function(){ onPick(s.id); }
+    },[s.label]));
+  });
+  return wrap;
+}
+
+/* ------------------------- sheet ------------------------- */
+let closeSheet = null;
+function openSheet(title, buildBody, buildFoot){
+  const layer = document.getElementById("layer");
+  layer.textContent = "";
+
+  const body = h("div",{class:"sheet-body"});
+  const foot = h("div",{class:"sheet-foot"});
+  const sheet = h("div",{class:"sheet",role:"dialog","aria-modal":"true",onclick:function(e){ e.stopPropagation(); }},[
+    h("div",{class:"sheet-head"},[
+      h("h3",{text:title}),
+      h("button",{class:"x","aria-label":"Close",onclick:close},["×"])
+    ]),
+    body, foot
+  ]);
+  const backdrop = h("div",{class:"backdrop",onclick:close},[sheet]);
+  layer.appendChild(backdrop);
+  document.body.style.overflow = "hidden";
+
+  function redraw(){
+    body.textContent = "";
+    buildBody(body, redraw, close);
+    foot.textContent = "";
+    if(buildFoot) buildFoot(foot, redraw, close);
+  }
+  function close(){
+    layer.textContent = "";
+    document.body.style.overflow = "";
+    document.removeEventListener("keydown", onKey);
+    closeSheet = null;
+  }
+  function onKey(e){ if(e.key === "Escape") close(); }
+  document.addEventListener("keydown", onKey);
+
+  closeSheet = close;
+  redraw();
+  return { redraw:redraw, close:close };
+}
+
+/* ------------------------- composer ------------------------- */
+function blankDraft(day){
+  return { title:"", url:"", kind:"see", note:"", day: day === undefined ? null : day, slot:"flex", time:"" };
+}
+function openComposer(draft, editId){
+  const d = Object.assign({}, draft);
+  let extras = !!(d.url || d.note);
+
+  const sheet = openSheet(editId ? "Edit" : "Add to trip", function(body, redraw){
+    /* what */
+    const title = h("input",{class:"bigin",value:d.title,placeholder:"Name it, or paste a link",
+      oninput:function(e){
+        const v = e.target.value;
+        if(/^https?:\/\/\S+$/i.test(v.trim())){
+          d.url = v.trim(); d.title = prettifyUrl(v.trim()); extras = true; redraw();
+        } else { d.title = v; refreshFoot(); }
+      }});
+    body.appendChild(h("div",{},[h("p",{class:"panel-label",text:"What is it"}), title]));
+
+    /* type */
+    const kindWrap = h("div",{class:"pillwrap"});
+    KINDS.forEach(function(k){
+      kindWrap.appendChild(h("button",{class:"pill","data-on":d.kind===k.id,
+        style:{flex:"1 1 0",minWidth:"72px"},
+        onclick:function(){ d.kind = k.id; redraw(); }},[k.label]));
+    });
+    body.appendChild(h("div",{},[h("p",{class:"panel-label",text:"Type"}), kindWrap]));
+
+    /* day */
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"Which day"}),
+      dayPills(d.day, function(v){ d.day = v; redraw(); })
+    ]));
+
+    /* when */
+    if(d.day !== null && d.day !== undefined){
+      const time = h("input",{class:"bigin",type:"time",value:d.time,style:{marginTop:"8px"},
+        oninput:function(e){ d.time = e.target.value; }});
+      body.appendChild(h("div",{},[
+        h("p",{class:"panel-label",text:"When"}),
+        slotPills(d.slot, function(v){ d.slot = v; redraw(); }),
+        time
+      ]));
+    }
+
+    /* extras */
+    if(extras){
+      body.appendChild(h("div",{},[
+        h("p",{class:"panel-label",text:"Link"}),
+        h("input",{class:"bigin",value:d.url,placeholder:"https://",inputmode:"url",
+          oninput:function(e){ d.url = e.target.value; refreshFoot(); }})
+      ]));
+      body.appendChild(h("div",{},[
+        h("p",{class:"panel-label",text:"Note"}),
+        h("textarea",{class:"bigin",placeholder:"Booking ref, who suggested it, how to get there…",
+          oninput:function(e){ d.note = e.target.value; }}, [d.note])
+      ]));
+    } else {
+      body.appendChild(h("button",{class:"addhere",onclick:function(){ extras = true; redraw(); }},
+        ["+ Add a link or note"]));
+    }
+
+    if(!editId) setTimeout(function(){ title.focus(); }, 60);
+  }, function(foot){
+    foot.appendChild(saveBtn());
+  });
+
+  function target(){ return (d.day === null || d.day === undefined) ? "Ideas" : "Day "+(d.day+1); }
+  function canSave(){ return !!(d.title.trim() || d.url.trim()); }
+  function saveBtn(){
+    return h("button",{class:"btn cta",disabled:!canSave(),onclick:commit},
+      [editId ? "Save changes" : "Add to "+target()]);
+  }
+  function refreshFoot(){
+    const foot = document.querySelector(".sheet-foot");
+    if(foot){ foot.textContent = ""; foot.appendChild(saveBtn()); }
+  }
+  function commit(){
+    const title = d.title.trim() || (d.url ? prettifyUrl(d.url) : "");
+    if(!title) return;
+    if(editId){
+      update(editId, Object.assign({}, d, {title:title}));
+    } else {
+      state.items.push(Object.assign({}, d, {title:title, id:uid(), booked:false}));
+      if(d.day !== null && d.day !== undefined){ ui.pane = "route"; }
+      save();
+    }
+    sheet.close();
+    render();
+    toast(editId ? "Updated" : "Added to "+target());
+  }
+}
+
+/* ------------------------- share / backup ------------------------- */
+function buildText(){
+  const t = state.trip;
+  const out = [ (t.name || "Our trip").toUpperCase() ];
+  if(t.startDate) out.push("Starting "+dateForDay(t.startDate,0));
+  out.push("");
+  for(let d=0; d<t.dayCount; d++){
+    const date = dateForDay(t.startDate,d);
+    out.push("DAY "+(d+1)+(date ? " — "+date : ""));
+    const list = dayItems(d);
+    if(!list.length) out.push("  (nothing planned)");
+    list.forEach(function(i){
+      const when = i.time || slotLabel(i.slot) || "";
+      out.push("  "+when.padEnd(10)+" "+i.title+(i.booked ? "  [booked]" : ""));
+      if(i.url) out.push("             "+i.url);
+      if(i.note) out.push("             "+i.note);
+    });
+    out.push("");
+  }
+  const pool = ideas();
+  if(pool.length){
+    out.push("IDEAS — NOT YET PLACED");
+    pool.forEach(function(i){ out.push("  "+i.title+(i.url ? " — "+i.url : "")); });
+  }
+  return out.join("\n");
+}
+
+function openShare(){
+  const text = buildText();
+  openSheet("Share & back up", function(body){
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"The plan as text"}),
+      h("textarea",{class:"bigin share",readonly:true,
+        onfocus:function(e){ e.target.select(); }},[text])
+    ]));
+
+    const row = h("div",{class:"actions"});
+    if(navigator.share){
+      row.appendChild(h("button",{onclick:function(){
+        navigator.share({title: state.trip.name || "Our trip", text:text}).catch(function(){});
+      }},["Share…"]));
+    }
+    row.appendChild(h("button",{onclick:function(){
+      if(navigator.clipboard){
+        navigator.clipboard.writeText(text)
+          .then(function(){ toast("Copied"); })
+          .catch(function(){ toast("Select the text above to copy"); });
+      } else { toast("Select the text above to copy"); }
+    }},["Copy"]));
+    body.appendChild(row);
+
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"Backup file"}),
+      h("p",{class:"note",style:{marginTop:"0"},
+        text:"Your plan lives on this phone only. Export a file to keep a copy, or to hand the plan to someone else's phone."}),
+      h("div",{class:"actions"},[
+        h("button",{onclick:exportFile},["Export"]),
+        h("button",{onclick:importFile},["Import"])
+      ])
+    ]));
+  });
+}
+
+function exportFile(){
+  const blob = new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().slice(0,10);
+  const a = h("a",{href:url,download:"trip-plan-"+stamp+".json"});
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  toast("Exported");
+}
+
+function importFile(){
+  const input = h("input",{type:"file",accept:"application/json,.json",style:{display:"none"}});
+  input.addEventListener("change",function(){
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(){
+      try{
+        const p = JSON.parse(reader.result);
+        if(!p || !Array.isArray(p.items)) throw new Error("bad file");
+        if(!confirm("Replace the plan on this phone with the file's plan?")) return;
+        state = { trip: Object.assign({name:"",startDate:"",dayCount:4}, p.trip||{}), items: p.items };
+        save();
+        if(closeSheet) closeSheet();
+        render();
+        toast("Imported");
+      }catch(e){ toast("That file didn't look like a trip plan."); }
+    };
+    reader.readAsText(file);
+  });
+  document.body.appendChild(input); input.click(); input.remove();
+}
+
+/* ------------------------- item card ------------------------- */
+function itemCard(item, color, inline){
+  const open = ui.openId === item.id;
+  const kind = kindOf(item.kind);
+  const placed = item.day !== null && item.day !== undefined;
+  const meta = [
+    kind.label,
+    item.time,
+    placed ? slotLabel(item.slot) : null,
+    hostOf(item.url)
+  ].filter(Boolean).join("  ·  ") + (item.booked ? "  ·  booked" : "");
+
+  const card = h("div",{class:"item",style:{"--line":color}});
+  if(!inline){
+    const node = h("span",{class:"node "+kind.shape});
+    if(item.booked) node.setAttribute("data-booked","true");
+    card.appendChild(node);
+  }
+
+  const inner = h("span",{style:{flex:"1",minWidth:"0"}},[
+    h("span",{class:"item-title",text:item.title}),
+    h("span",{class:"sub",style:{display:"block"},text:meta})
+  ]);
+  if(item.note && !open){
+    inner.appendChild(h("span",{class:"note",style:{display:"block"},text:item.note}));
+  }
+  card.appendChild(h("button",{class:"item-main","aria-expanded":open,
+    onclick:function(){ ui.openId = open ? null : item.id; ui.confirmId = null; render(); }},[
+      inner, h("span",{class:"caret",text: open ? "▲" : "▼"})
+  ]));
+
+  if(open){
+    const panel = h("div",{class:"panel"});
+    if(item.note) panel.appendChild(h("p",{class:"note",style:{marginTop:"0"},text:item.note}));
+    if(item.url){
+      panel.appendChild(h("a",{class:"openlink",href:item.url,target:"_blank",rel:"noreferrer"},
+        ["Open link ↗"]));
+    }
+    panel.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"Move to"}),
+      dayPills(placed ? item.day : null, function(v){ update(item.id,{day:v}); })
+    ]));
+    if(placed){
+      panel.appendChild(h("div",{},[
+        h("p",{class:"panel-label",text:"When"}),
+        slotPills(item.slot, function(v){ update(item.id,{slot:v}); })
+      ]));
+    }
+    const actions = h("div",{class:"actions"},[
+      h("button",{"data-on":item.booked,
+        onclick:function(){ update(item.id,{booked:!item.booked}); }},
+        [item.booked ? "Booked" : "Book it"]),
+      h("button",{onclick:function(){ openComposer(item, item.id); }},["Edit details"]),
+      ui.confirmId === item.id
+        ? h("button",{"data-danger":"true",onclick:function(){ removeItem(item.id); }},["Tap to remove"])
+        : h("button",{onclick:function(){ ui.confirmId = item.id; render(); }},["Remove"])
+    ]);
+    panel.appendChild(actions);
+    card.appendChild(panel);
+  }
+  return card;
+}
+
+/* ------------------------- render ------------------------- */
+const dayNodes = {};
+function render(){
+  const app = document.getElementById("app");
+  const scrollY = window.scrollY;
+  app.textContent = "";
+
+  const t = state.trip;
+  const wrap = h("div",{class:"wrap"});
+
+  /* header */
+  wrap.appendChild(h("p",{class:"eyebrow",text:"The route"}));
+  const nameInput = h("input",{class:"name",value:t.name,placeholder:"Name this trip",
+    oninput:function(e){ t.name = e.target.value; save(); }});
+  wrap.appendChild(nameInput);
+
+  wrap.appendChild(h("div",{class:"meta"},[
+    h("div",{class:"field"},[
+      h("label",{for:"start",text:"First day"}),
+      h("input",{id:"start",class:"date",type:"date",value:t.startDate,
+        onchange:function(e){ t.startDate = e.target.value; save(); render(); }})
+    ]),
+    h("div",{class:"field"},[
+      h("label",{text:"Days"}),
+      h("div",{class:"step"},[
+        h("button",{"aria-label":"Remove a day",
+          onclick:function(){ t.dayCount = Math.max(1,t.dayCount-1); save(); render(); }},["−"]),
+        h("span",{text:String(t.dayCount)}),
+        h("button",{"aria-label":"Add a day",
+          onclick:function(){ t.dayCount = Math.min(30,t.dayCount+1); save(); render(); }},["+"])
+      ])
+    ]),
+    h("button",{class:"btn ghost",onclick:openShare},["Share plan"]),
+    h("button",{class:"btn hide-mobile",
+      onclick:function(){ openComposer(blankDraft(ui.activeDay)); }},["Add something"])
+  ]));
+
+  /* strip */
+  const strip = h("div",{class:"strip"});
+  strip.appendChild(h("button",{class:"stop","data-active":ui.activeDay===null,
+    onclick:function(){ ui.activeDay = null; ui.pane = "ideas"; render(); }},[
+      h("span",{class:"dot"}),
+      h("span",{class:"stop-label"},["Ideas", h("span",{class:"stop-count",text:String(ideas().length)})])
+  ]));
+  for(let d=0; d<t.dayCount; d++){
+    (function(d){
+      const list = dayItems(d);
+      strip.appendChild(h("button",{class:"stop","data-active":ui.activeDay===d,
+        onclick:function(){ goToDay(d); }},[
+          h("span",{class:"dot",style:{borderColor:LINES[d%LINES.length]}}),
+          h("span",{class:"stop-label"},[
+            dateForDay(t.startDate,d) || ("Day "+(d+1)),
+            h("span",{class:"stop-count",text:list.length+" stops"})
+          ])
+      ]));
+    })(d);
+  }
+  wrap.appendChild(h("div",{class:"strip-outer"},[strip]));
+
+  /* tabs */
+  wrap.appendChild(h("div",{class:"tabs"},[
+    h("button",{class:"tab","data-on":ui.pane==="ideas",
+      onclick:function(){ ui.pane="ideas"; render(); }},["Ideas ("+ideas().length+")"]),
+    h("button",{class:"tab","data-on":ui.pane==="route",
+      onclick:function(){ ui.pane="route"; render(); }},["The days"])
+  ]));
+
+  /* columns */
+  const cols = h("div",{class:"cols"});
+
+  const pool = ideas();
+  const ideaPane = h("section",{class:"pane","data-hidden":ui.pane!=="ideas"},[
+    h("div",{class:"colhead"},[
+      h("h2",{text:"Ideas"}),
+      h("span",{class:"eyebrow",text:pool.length+" saved"})
+    ])
+  ]);
+  if(!pool.length){
+    ideaPane.appendChild(h("div",{class:"empty"},[
+      "Nothing waiting. Anything you add without a day lands here.",
+      h("button",{class:"addhere",onclick:function(){ openComposer(blankDraft(null)); }},["+ Add an idea"])
+    ]));
+  } else {
+    pool.forEach(function(i){ ideaPane.appendChild(itemCard(i,"#8A9490",true)); });
+    ideaPane.appendChild(h("button",{class:"addhere",
+      onclick:function(){ openComposer(blankDraft(null)); }},["+ Add an idea"]));
+  }
+  cols.appendChild(ideaPane);
+
+  const placedCount = state.items.filter(function(i){ return i.day !== null && i.day !== undefined; }).length;
+  const routePane = h("section",{class:"pane","data-hidden":ui.pane!=="route"},[
+    h("div",{class:"colhead"},[
+      h("h2",{text:"Day by day"}),
+      h("span",{class:"eyebrow",text:placedCount+" placed"})
+    ])
+  ]);
+  for(let d=0; d<t.dayCount; d++){
+    (function(d){
+      const color = LINES[d%LINES.length];
+      const list = dayItems(d);
+      const block = h("div",{class:"day",style:{"--line":color}},[
+        h("div",{class:"dayhead"},[
+          h("span",{class:"daynum",text:"DAY "+(d+1)}),
+          h("span",{class:"daydate",text:dateForDay(t.startDate,d)})
+        ])
+      ]);
+      if(!list.length){
+        block.appendChild(h("div",{class:"empty"},[
+          "Open.",
+          h("button",{class:"addhere",
+            onclick:function(){ openComposer(blankDraft(d)); }},["+ Add to Day "+(d+1)])
+        ]));
+      } else {
+        const track = h("div",{class:"track"});
+        SLOTS.forEach(function(band){
+          const inBand = list.filter(function(i){ return i.slot === band.id; });
+          if(!inBand.length) return;
+          track.appendChild(h("p",{class:"band",text:band.label}));
+          inBand.forEach(function(i){ track.appendChild(itemCard(i,color,false)); });
+        });
+        track.appendChild(h("button",{class:"addhere",
+          onclick:function(){ openComposer(blankDraft(d)); }},["+ Add to Day "+(d+1)]));
+        block.appendChild(track);
+      }
+      dayNodes[d] = block;
+      routePane.appendChild(block);
+    })(d);
+  }
+  cols.appendChild(routePane);
+  wrap.appendChild(cols);
+  app.appendChild(wrap);
+
+  /* dock */
+  app.appendChild(h("div",{class:"dock"},[
+    h("button",{class:"btn cta",
+      onclick:function(){ openComposer(blankDraft(ui.activeDay)); }},["+ Add to trip"])
+  ]));
+
+  window.scrollTo(0, scrollY);
+}
+
+function goToDay(d){
+  ui.activeDay = d; ui.pane = "route"; render();
+  requestAnimationFrame(function(){
+    if(dayNodes[d]) dayNodes[d].scrollIntoView({behavior:"smooth",block:"start"});
+  });
+}
+
+/* ------------------------- boot ------------------------- */
+load();
+render();
+
+if("serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("./sw.js").catch(function(){});
+  });
+}
+</script>
+</body>
+</html>
