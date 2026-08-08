@@ -700,7 +700,16 @@ function openComposer(draft, editId){
 
 /* ============================ settings ============================ */
 function openSettings(){
-  let keyDraft = sync.key, binDraft = sync.bin;
+  function commitField(which, value){
+    const v = (value || "").trim();
+    if(which === "key") sync.key = v; else sync.bin = v;
+    if(sync.status === "off" && sync.key && sync.bin) sync.status = "idle";
+    if(!sync.key || !sync.bin) sync.status = "off";
+    saveSync();
+    renderHeader();
+    const fb = document.querySelector(".sheet-foot button");
+    if(fb) fb.textContent = connected() ? "Done & sync" : "Done";
+  }
 
   openSheet("Trip settings", function(body, redraw, close){
     /* trip */
@@ -738,41 +747,39 @@ function openSettings(){
     });
     body.appendChild(h("div",{},[h("p",{class:"panel-label",text:"Look"}), themeRow]));
 
-    /* sync */
+    /* sync — saved as you type, so no exit path can lose it */
     body.appendChild(h("div",{},[
       h("p",{class:"panel-label",text:"Sync between phones (JSONBin)"}),
-      h("input",{class:"bigin mono",value:keyDraft,placeholder:"X-Master-Key",
+      h("input",{class:"bigin mono",value:sync.key,placeholder:"X-Master-Key",
         autocomplete:"off",autocapitalize:"none",spellcheck:"false",
-        oninput:function(e){ keyDraft = e.target.value.trim(); }}),
-      h("input",{class:"bigin mono",value:binDraft,placeholder:"Bin ID",style:{marginTop:"7px"},
+        oninput:function(e){ commitField("key", e.target.value); }}),
+      h("input",{class:"bigin mono",value:sync.bin,placeholder:"Bin ID",style:{marginTop:"7px"},
         autocomplete:"off",autocapitalize:"none",spellcheck:"false",
-        oninput:function(e){ binDraft = e.target.value.trim(); }}),
+        oninput:function(e){ commitField("bin", e.target.value); }}),
       h("p",{class:"hint",text:
-        "Enter your key on each phone — it's stored on the device, never in the app's code. "+
-        "On the first phone, leave the Bin ID blank and tap Create bin. On the second, paste the "+
-        "same key and the Bin ID it gives you."})
+        "Typed here, kept on this phone, never in the app's code. "+
+        "On the first phone leave the Bin ID blank and tap Create bin. On the second, paste the "+
+        "same key and that Bin ID, then tap Save & sync."})
     ]));
 
     const row = h("div",{class:"actions"},[
       h("button",{onclick:async function(){
-        sync.key = keyDraft; sync.bin = binDraft; saveSync();
-        if(!sync.key){ toast("Add your key first."); return; }
+        if(!sync.key){ toast("Paste your Master Key first."); return; }
         if(!sync.bin){
           setStatus("busy");
           try{
             sync.bin = await createBin();
-            binDraft = sync.bin;
-            saveSync(); setStatus("ok");
             sync.lastSync = now();
-            redraw();
+            saveSync(); setStatus("ok"); redraw();
             toast("Bin created — copy the ID onto the other phone.");
           }catch(e){ setStatus("err", e.message); toast(e.message); }
           return;
         }
-        close();
+        setStatus("busy");
         await syncNow();
+        redraw();
         toast(sync.status === "ok" ? "Synced" : (sync.message || "Sync failed"));
-      }},[ sync.bin || binDraft ? "Save & sync" : "Create bin" ]),
+      }},[ sync.bin ? "Save & sync" : "Create bin" ]),
       h("button",{"data-danger": connected() ? "true" : false, onclick:function(){
         if(!connected()){ toast("Not connected yet."); return; }
         if(!confirm("Stop syncing? The plan stays on this phone.")) return;
@@ -784,7 +791,7 @@ function openSettings(){
 
     if(sync.bin){
       body.appendChild(h("p",{class:"hint",
-        text:"Bin ID: " + sync.bin + "  ·  last sync " + ago(sync.lastSync) +
+        text:"Bin ID saved: " + sync.bin + "  ·  last sync " + ago(sync.lastSync) +
              (sync.message ? "  ·  " + sync.message : "")}));
     }
 
@@ -797,7 +804,13 @@ function openSettings(){
       ])
     ]));
   }, function(foot, redraw, close){
-    foot.appendChild(h("button",{class:"btn cta ghost",onclick:close},["Done"]));
+    foot.appendChild(h("button",{class:"btn cta",onclick:async function(){
+      close();
+      if(connected()){
+        await syncNow();
+        toast(sync.status === "ok" ? "Synced" : (sync.message || "Sync failed"));
+      }
+    }},[ connected() ? "Done & sync" : "Done" ]));
   });
 }
 
