@@ -168,6 +168,25 @@ button{font-family:inherit;}
 .empty{border:2px dashed var(--rule);border-radius:16px;padding:14px;font-size:13px;color:var(--ink2);
   line-height:1.5;}
 
+/* ---- money ---- */
+.costchip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:10px;
+  background:var(--sink);border:2px solid var(--rule);border-radius:14px;padding:9px 13px;
+  cursor:pointer;text-align:left;width:100%;color:inherit;}
+.costchip:active{transform:translateY(1px);}
+.costbig{font-size:24px;font-weight:800;letter-spacing:-.03em;line-height:1.1;color:var(--ink);}
+.costsub{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink2);line-height:1.5;}
+.daycost{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--ink);
+  background:var(--sink);border-radius:99px;padding:4px 9px;margin-left:auto;}
+.costlist{display:flex;flex-direction:column;gap:2px;}
+.costrow{display:flex;align-items:center;gap:9px;padding:9px 0;
+  border-bottom:1px solid var(--rule);}
+.costrow:last-child{border-bottom:0;}
+.costswatch{width:11px;height:11px;border-radius:50%;flex:0 0 auto;}
+.costlabel{flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink2);}
+.costval{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--ink);}
+.costval.strong{font-size:19px;letter-spacing:-.02em;}
+.costtotal{border:2px solid var(--ink);border-radius:16px;padding:4px 13px;background:var(--card);}
+
 /* ---- dock ---- */
 .dock{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;gap:8px;
   padding:10px 14px calc(12px + env(safe-area-inset-bottom));
@@ -269,7 +288,7 @@ const TOMBSTONE_DAYS = 60;
 
 /* ============================ state ============================ */
 let state = {
-  trip:{ name:"Lanzarote", startDate:"2026-08-15", dayCount:12, updatedAt:0 },
+  trip:{ name:"Lanzarote", startDate:"2026-08-15", dayCount:12, party:2, currency:"€", updatedAt:0 },
   items:[]
 };
 let sync = { key:"", bin:"", status:"off", lastSync:0, message:"" };
@@ -358,6 +377,21 @@ function fmtDay(i, long){
     ? {weekday:"short", day:"numeric", month:"short"}
     : {day:"numeric", month:"short"});
 }
+function party(){ return Math.max(1, Math.min(20, Number(state.trip.party) || 1)); }
+function currency(){ return state.trip.currency || "\u20ac"; }
+function costOf(i){ const n = Number(i && i.cost); return isFinite(n) && n > 0 ? n : 0; }
+function money(v){
+  const n = Number(v) || 0;
+  const raw = Math.abs(n % 1) > 0.005 ? n.toFixed(2) : String(Math.round(n));
+  const parts = raw.split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return currency() + parts.join(".");
+}
+function placed(i){ return i.day !== null && i.day !== undefined; }
+function dayCostPP(d){ return dayItems(d).reduce(function(s,i){ return s + costOf(i); }, 0); }
+function plannedCostPP(){ return live().filter(placed).reduce(function(s,i){ return s + costOf(i); }, 0); }
+function ideasCostPP(){ return ideas().reduce(function(s,i){ return s + costOf(i); }, 0); }
+
 function kindOf(id){ return KINDS.find(k => k.id === id) || KINDS[0]; }
 function slotLabel(id){ const s = SLOTS.find(x => x.id === id); return s ? s.label : ""; }
 function ago(ts){
@@ -463,7 +497,7 @@ function mergeStates(a, b){
   const bt = (b.trip && b.trip.updatedAt) || 0;
   const trip = bt > at ? b.trip : a.trip;
   return {
-    trip: Object.assign({name:"", startDate:"", dayCount:12, updatedAt:0}, trip||{}),
+    trip: Object.assign({name:"", startDate:"", dayCount:12, party:2, currency:"€", updatedAt:0}, trip||{}),
     items: Object.keys(byId).map(k => byId[k])
   };
 }
@@ -617,8 +651,16 @@ function slotGrid(value, onPick){
 /* ============================ composer ============================ */
 function blankDraft(day){
   return {title:"", url:"", kind:"see", note:"", day: day === undefined ? null : day,
-          slot:"flex", time:""};
+          slot:"flex", time:"", cost:""};
 }
+function costEcho(cost){
+  const n = Number(cost) || 0;
+  if(n <= 0) return "";
+  const p = party();
+  return money(n) + " each  ·  " + money(n * p) + " for " + p +
+         (p === 1 ? " person" : " people");
+}
+
 function openComposer(draft, editId){
   const d = Object.assign({}, draft);
   let extras = !!(d.url || d.note);
@@ -639,6 +681,20 @@ function openComposer(draft, editId){
         onclick:function(){ d.kind = k.id; redraw(); }},[k.label]));
     });
     body.appendChild(h("div",{},[h("p",{class:"panel-label",text:"Type"}), kinds]));
+
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"Cost per person (" + currency() + ")"}),
+      h("input",{class:"bigin mono",value:d.cost || "",placeholder:"Leave blank if free",
+        inputmode:"decimal",
+        oninput:function(e){
+          const v = e.target.value.replace(/[^0-9.]/g,"");
+          if(v !== e.target.value) e.target.value = v;
+          d.cost = v;
+          const echo = document.getElementById("costecho");
+          if(echo) echo.textContent = costEcho(d.cost);
+        }}),
+      h("p",{class:"hint",id:"costecho",text:costEcho(d.cost)})
+    ]));
 
     body.appendChild(h("div",{},[
       h("p",{class:"panel-label",text:"Which day"}),
@@ -736,6 +792,26 @@ function openSettings(){
       ])
     ]));
 
+    /* who's going */
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"How many of you"}),
+      h("div",{class:"stepper"},[
+        h("button",{"aria-label":"Fewer people",onclick:function(){
+          state.trip.party = Math.max(1, party()-1); touchTrip(); render(); redraw();
+        }},["\u2212"]),
+        h("span",{text: party() + (party()===1 ? " person" : " people")}),
+        h("button",{"aria-label":"More people",onclick:function(){
+          state.trip.party = Math.min(20, party()+1); touchTrip(); render(); redraw();
+        }},["+"])
+      ]),
+      h("p",{class:"hint",text:"Totals multiply each item's per-person cost by this."})
+    ]));
+    body.appendChild(h("div",{},[
+      h("p",{class:"panel-label",text:"Currency symbol"}),
+      h("input",{class:"bigin mono",value:currency(),maxlength:"3",
+        oninput:function(e){ state.trip.currency = e.target.value || "\u20ac"; touchTrip(); renderHeader(); }})
+    ]));
+
     /* theme */
     const themeRow = h("div",{class:"kindgrid",style:{gridTemplateColumns:"repeat(3,1fr)"}});
     THEMES.forEach(function(t){
@@ -827,7 +903,9 @@ function buildText(){
     if(!list.length) out.push("  (nothing planned)");
     list.forEach(function(i){
       const when = i.time || slotLabel(i.slot) || "";
-      out.push("  " + when.padEnd(10) + " " + i.title + (i.booked ? "  [booked]" : ""));
+      const c = costOf(i);
+      out.push("  " + when.padEnd(10) + " " + i.title +
+        (c ? "  " + money(c) + " pp" : "") + (i.booked ? "  [booked]" : ""));
       if(i.url) out.push("             " + i.url);
       if(i.note) out.push("             " + i.note);
     });
@@ -836,7 +914,17 @@ function buildText(){
   const pool = ideas();
   if(pool.length){
     out.push("IDEAS — NOT YET PLACED");
-    pool.forEach(function(i){ out.push("  " + i.title + (i.url ? " — " + i.url : "")); });
+    pool.forEach(function(i){
+      const c = costOf(i);
+      out.push("  " + i.title + (c ? "  " + money(c) + " pp" : "") + (i.url ? " — " + i.url : ""));
+    });
+    out.push("");
+  }
+  const totalPP = plannedCostPP();
+  if(totalPP > 0){
+    out.push("TOTAL PLANNED");
+    out.push("  " + money(totalPP) + " each  ·  " + money(totalPP * party()) +
+             " for " + party() + (party() === 1 ? " person" : " people"));
   }
   return out.join("\n");
 }
@@ -900,8 +988,10 @@ function importFile(){
 function itemCard(item, color, inline){
   const open = ui.openId === item.id;
   const kind = kindOf(item.kind);
-  const placed = item.day !== null && item.day !== undefined;
-  const meta = [kind.label, item.time, placed ? slotLabel(item.slot) : null, hostOf(item.url)]
+  const isPlaced = item.day !== null && item.day !== undefined;
+  const c = costOf(item);
+  const meta = [kind.label, item.time, isPlaced ? slotLabel(item.slot) : null,
+                c ? money(c) + " pp" : null, hostOf(item.url)]
     .filter(Boolean).join("  ·  ") + (item.booked ? "  ·  booked" : "");
 
   const card = h("div",{class:"item",style:{"--line":color}});
@@ -926,11 +1016,14 @@ function itemCard(item, color, inline){
     if(item.note) panel.appendChild(h("p",{class:"note",style:{marginTop:"0"},text:item.note}));
     if(item.url) panel.appendChild(h("a",{class:"openlink",href:item.url,target:"_blank",
       rel:"noreferrer"},["Open link ↗"]));
+    if(c) panel.appendChild(h("p",{class:"hint",style:{margin:"0"},
+      text: money(c) + " each  ·  " + money(c * party()) + " for " + party() +
+            (party() === 1 ? " person" : " people")}));
     panel.appendChild(h("div",{},[
       h("p",{class:"panel-label",text:"Move to"}),
-      dayGrid(placed ? item.day : null, function(v){ update(item.id,{day:v}); })
+      dayGrid(isPlaced ? item.day : null, function(v){ update(item.id,{day:v}); })
     ]));
-    if(placed){
+    if(isPlaced){
       panel.appendChild(h("div",{},[
         h("p",{class:"panel-label",text:"When"}),
         slotGrid(item.slot, function(v){ update(item.id,{slot:v}); })
@@ -974,7 +1067,8 @@ function headerNode(){
           h("span",{class:"syncdot","data-s":
             sync.status==="ok"?"ok":sync.status==="busy"?"busy":sync.status==="err"?"err":"off"}),
           document.createTextNode(statusText)
-        ])
+        ]),
+        costChip()
       ]),
       h("button",{class:"iconbtn","aria-label":"Change theme",title:"Theme",
         onclick:cycleTheme},[(THEMES.find(x=>x.id===themePref())||THEMES[0]).glyph]),
@@ -982,6 +1076,75 @@ function headerNode(){
     ])
   ]);
 }
+function costChip(){
+  const pp = plannedCostPP();
+  const p = party();
+  const pool = ideasCostPP();
+  return h("button",{class:"costchip",onclick:openCosts},[
+    h("span",{class:"costbig",text: money(pp * p)}),
+    h("span",{class:"costsub",
+      text:"planned for " + p + (p === 1 ? " person" : " people") +
+           "  ·  " + money(pp) + " each" +
+           (pool > 0 ? "  ·  " + money(pool * p) + " more in ideas" : "")})
+  ]);
+}
+
+function openCosts(){
+  openSheet("What it adds up to", function(body){
+    const p = party();
+    const rows = [];
+    for(let d=0; d<state.trip.dayCount; d++){
+      const sub = dayCostPP(d);
+      if(sub > 0) rows.push({label:"Day " + (d+1) + (fmtDay(d,false) ? "  " + fmtDay(d,false) : ""),
+                             value: sub, color: LINES[d % LINES.length]});
+    }
+    if(!rows.length && ideasCostPP() === 0){
+      body.appendChild(h("div",{class:"empty"},[
+        "No costs yet. Add a cost per person to any item and it'll total up here."
+      ]));
+      return;
+    }
+    const list = h("div",{class:"costlist"});
+    rows.forEach(function(r){
+      list.appendChild(h("div",{class:"costrow"},[
+        h("span",{class:"costswatch",style:{background:r.color}}),
+        h("span",{class:"costlabel",text:r.label}),
+        h("span",{class:"costval",text:money(r.value * p)})
+      ]));
+    });
+    if(!rows.length) list.appendChild(h("p",{class:"hint",text:"Nothing costed on a day yet."}));
+    body.appendChild(h("div",{},[h("p",{class:"panel-label",text:"By day"}), list]));
+
+    const total = plannedCostPP();
+    body.appendChild(h("div",{class:"costtotal"},[
+      h("div",{class:"costrow"},[
+        h("span",{class:"costlabel",text:"Planned, all " + p + (p===1?" person":" people")}),
+        h("span",{class:"costval strong",text:money(total * p)})
+      ]),
+      h("div",{class:"costrow"},[
+        h("span",{class:"costlabel",text:"Per person"}),
+        h("span",{class:"costval",text:money(total)})
+      ])
+    ]));
+
+    const pool = ideasCostPP();
+    if(pool > 0){
+      body.appendChild(h("div",{},[
+        h("p",{class:"panel-label",text:"Still just ideas"}),
+        h("div",{class:"costrow"},[
+          h("span",{class:"costlabel",text:"If you booked everything in Ideas"}),
+          h("span",{class:"costval",text:"+ " + money(pool * p)})
+        ]),
+        h("p",{class:"hint",text:"Ideas aren't counted in the total until you give them a day."})
+      ]));
+    }
+    body.appendChild(h("p",{class:"hint",
+      text:"Costs are what you type in per person. Change the number of people in ⚙ settings."}));
+  }, function(foot, r, close){
+    foot.appendChild(h("button",{class:"btn cta ghost",onclick:close},["Done"]));
+  });
+}
+
 function renderHeader(){
   const old = document.getElementById("top");
   if(old) old.replaceWith(headerNode());
@@ -1066,7 +1229,10 @@ function render(){
       const block = h("div",{class:"day",style:{"--line":color}},[
         h("div",{class:"dayhead"},[
           h("span",{class:"daynum",text:"DAY "+(d+1)}),
-          h("span",{class:"daydate",text:fmtDay(d,true)})
+          h("span",{class:"daydate",text:fmtDay(d,true)}),
+          dayCostPP(d) > 0
+            ? h("span",{class:"daycost",text:money(dayCostPP(d) * party())})
+            : null
         ])
       ]);
       if(!list.length){
