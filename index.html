@@ -168,6 +168,11 @@ button{font-family:inherit;}
 .empty{border:2px dashed var(--rule);border-radius:16px;padding:14px;font-size:13px;color:var(--ink2);
   line-height:1.5;}
 
+.todaybadge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.14em;
+  color:var(--paper);background:var(--ink);padding:4px 8px;border-radius:99px;}
+.stop[data-today="true"] .dot{box-shadow:0 0 0 4px var(--paper),0 0 0 6px var(--ink);}
+.stop[data-today="true"] .stop-label{color:var(--ink);font-weight:600;}
+
 /* ---- money ---- */
 .costchip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;margin-top:10px;
   background:var(--sink);border:2px solid var(--rule);border-radius:14px;padding:9px 13px;
@@ -347,6 +352,11 @@ function h(tag, props, children){
   });
   return el;
 }
+function scrollToEl(el, opts){
+  if(el && typeof el.scrollIntoView === "function"){
+    try{ el.scrollIntoView(opts); }catch(e){}
+  }
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const now = () => Date.now();
 
@@ -439,6 +449,46 @@ if(window.matchMedia){
   const onChange = function(){ if(themePref() === "auto") applyTheme(); };
   if(mq.addEventListener) mq.addEventListener("change", onChange);
   else if(mq.addListener) mq.addListener(onChange);
+}
+
+/* ============================ shared-in links ============================ */
+function firstUrl(s){
+  const m = (s || "").match(/https?:\/\/[^\s]+/);
+  return m ? m[0] : "";
+}
+/* Android hands shares over inconsistently: sometimes url, usually all of it in text. */
+function readShare(){
+  let q;
+  try{ q = new URLSearchParams(location.search); }catch(e){ return null; }
+  const title = (q.get("title") || "").trim();
+  const text  = (q.get("text")  || "").trim();
+  const url   = (q.get("url")   || "").trim() || firstUrl(text);
+  if(!title && !text && !url) return null;
+
+  let name = title;
+  if(!name){
+    name = text.replace(url, "").trim();          /* text minus the link */
+  }
+  if(!name && url) name = prettifyUrl(url);
+  if(!name) name = text;
+
+  return { title:name, url:url, note: (text && text !== name && text !== url) ? text : "" };
+}
+function clearShareParams(){
+  try{ history.replaceState({}, "", location.pathname); }catch(e){}
+}
+
+/* ============================ today ============================ */
+function todayIndex(){
+  const s = state.trip.startDate;
+  if(!s) return null;
+  const p = s.split("-").map(Number);
+  if(!p[0] || !p[1] || !p[2]) return null;
+  const start = new Date(p[0], p[1]-1, p[2]); start.setHours(0,0,0,0);
+  const t = new Date(); t.setHours(0,0,0,0);
+  const diff = Math.round((t - start) / 86400000);
+  if(diff < 0 || diff >= state.trip.dayCount) return null;
+  return diff;
 }
 
 let toastTimer;
@@ -1045,11 +1095,15 @@ function itemCard(item, color, inline){
 
 /* ============================ render ============================ */
 const dayNodes = {};
+const stopNodes = {};
 
 function headerNode(){
   const t = state.trip;
   const last = t.dayCount - 1;
-  const range = t.startDate ? fmtDay(0,true) + " – " + fmtDay(last,true) : "No dates set";
+  const ti = todayIndex();
+  const range = ti !== null
+    ? "Day " + (ti+1) + " of " + t.dayCount + "  ·  " + fmtDay(ti,true)
+    : (t.startDate ? fmtDay(0,true) + " – " + fmtDay(last,true) : "No dates set");
   const statusText = sync.status === "off" ? "Not syncing"
     : sync.status === "busy" ? "Syncing…"
     : sync.status === "err" ? (sync.message || "Sync problem")
@@ -1062,7 +1116,7 @@ function headerNode(){
         h("input",{class:"name",value:t.name,placeholder:"Name this trip",
           oninput:function(e){ t.name = e.target.value; touchTrip(); }}),
         h("p",{class:"tripline"},[
-          document.createTextNode(range + "  ·  " + t.dayCount + " days"),
+          document.createTextNode(ti !== null ? range : range + "  ·  " + t.dayCount + " days"),
           h("br"),
           h("span",{class:"syncdot","data-s":
             sync.status==="ok"?"ok":sync.status==="busy"?"busy":sync.status==="err"?"err":"off"}),
@@ -1162,21 +1216,24 @@ function render(){
 
   /* strip */
   const strip = h("div",{class:"strip"});
-  strip.appendChild(h("button",{class:"stop","data-active":ui.activeDay===null,
+  strip.appendChild(h("button",{class:"stop","data-active":ui.activeDay===null && ui.pane==="ideas",
     onclick:function(){ ui.activeDay = null; ui.pane = "ideas"; render(); }},[
       h("span",{class:"dot",style:{background:"var(--idle)"}}),
       h("span",{class:"stop-label"},["Ideas", h("span",{class:"stop-count",text:String(ideas().length)})])
   ]));
+  const ti = todayIndex();
   for(let d=0; d<t.dayCount; d++){
     (function(d){
-      strip.appendChild(h("button",{class:"stop","data-active":ui.activeDay===d,
+      const stop = h("button",{class:"stop","data-active":ui.activeDay===d && ui.pane==="route","data-today":ti===d,
         onclick:function(){ goToDay(d); }},[
           h("span",{class:"dot",style:{background:LINES[d%LINES.length]}}),
           h("span",{class:"stop-label"},[
-            "D" + (d+1),
+            ti === d ? "TODAY" : "D" + (d+1),
             h("span",{class:"stop-count",text: fmtDay(d,false) || (dayItems(d).length+" stops")})
           ])
-      ]));
+      ]);
+      stopNodes[d] = stop;
+      strip.appendChild(stop);
     })(d);
   }
   wrap.appendChild(h("div",{class:"strip-outer",id:"strip"},[strip]));
@@ -1230,6 +1287,7 @@ function render(){
         h("div",{class:"dayhead"},[
           h("span",{class:"daynum",text:"DAY "+(d+1)}),
           h("span",{class:"daydate",text:fmtDay(d,true)}),
+          todayIndex() === d ? h("span",{class:"todaybadge",text:"TODAY"}) : null,
           dayCostPP(d) > 0
             ? h("span",{class:"daycost",text:money(dayCostPP(d) * party())})
             : null
@@ -1274,7 +1332,8 @@ function render(){
 function goToDay(d){
   ui.activeDay = d; ui.pane = "route"; render();
   requestAnimationFrame(function(){
-    if(dayNodes[d]) dayNodes[d].scrollIntoView({behavior:"smooth",block:"start"});
+    scrollToEl(dayNodes[d], {behavior:"smooth", block:"start"});
+    scrollToEl(stopNodes[d], {block:"nearest", inline:"center"});
   });
 }
 
@@ -1282,7 +1341,33 @@ function goToDay(d){
 loadLocal();
 purgeOld();
 applyTheme();
+
+/* start on today, if the trip is running */
+const todayOnBoot = todayIndex();
+if(todayOnBoot !== null) ui.activeDay = todayOnBoot;
+
 render();
+
+if(todayOnBoot !== null){
+  requestAnimationFrame(function(){
+    scrollToEl(stopNodes[todayOnBoot], {block:"nearest", inline:"center"});
+    scrollToEl(dayNodes[todayOnBoot], {block:"start"});
+  });
+}
+
+/* something shared in from another app */
+const shared = readShare();
+if(shared){
+  clearShareParams();
+  const draft = blankDraft(null);
+  draft.title = shared.title;
+  draft.url = shared.url;
+  draft.note = shared.note;
+  if(/restaurant|menu|eat|food|dining|tapas|bar\b/i.test(shared.title + " " + shared.url)){
+    draft.kind = "eat";
+  }
+  setTimeout(function(){ openComposer(draft); }, 80);
+}
 
 if(connected()){
   pull();
