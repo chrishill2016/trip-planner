@@ -1,5 +1,5 @@
 /* Trip Planner service worker — app shell cache + runtime font cache */
-const VERSION = "trip-v6";
+const VERSION = "trip-v7";
 const SHELL = VERSION + "-shell";
 const RUNTIME = VERSION + "-runtime";
 

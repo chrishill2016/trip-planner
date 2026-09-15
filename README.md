@@ -3,6 +3,11 @@
 A small offline-first web app for planning a trip day by day. Installs to an Android
 home screen like a native app. All data stays on the device — nothing is sent anywhere.
 
+Supports any number of trips — tap **✈** in the header to switch between them, start a
+new one (handy for planning next year's trip while this year's is still open), rename,
+duplicate, or delete. Each trip keeps its own days, items, and — if you use it — its own
+JSONBin sync connection, so different trips can sync to different bins.
+
 ## Files
 
 | File | What it does |

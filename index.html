@@ -59,6 +59,8 @@ button{font-family:inherit;}
   background:var(--card);color:var(--ink);font-size:17px;cursor:pointer;margin-top:6px;
   box-shadow:var(--shadow);}
 .iconbtn:active{transform:translateY(1px);}
+.iconbtn[data-danger="true"]{color:var(--warn);border-color:var(--warn);}
+.iconbtn.small{width:38px;height:38px;border-radius:11px;font-size:14px;margin-top:0;}
 .syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;
   vertical-align:middle;background:var(--idle);}
 .syncdot[data-s="ok"]{background:var(--ok);}
@@ -168,6 +170,17 @@ button{font-family:inherit;}
 .empty{border:2px dashed var(--rule);border-radius:16px;padding:14px;font-size:13px;color:var(--ink2);
   line-height:1.5;}
 
+.triprow{display:flex;align-items:stretch;gap:6px;border:2px solid var(--rule);border-radius:16px;
+  padding:6px;margin-bottom:8px;background:var(--card);box-shadow:var(--shadow);}
+.triprow[data-active="true"]{border-color:var(--ink);}
+.triprow-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  background:none;border:0;text-align:left;padding:8px 6px;cursor:pointer;color:inherit;}
+.triprow-name{font-size:16px;font-weight:700;letter-spacing:-.01em;word-break:break-word;}
+.triprow-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink2);}
+.triprow-badge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--paper);background:var(--ink);padding:3px 7px;border-radius:99px;}
+.triprow-actions{display:flex;flex-direction:column;gap:4px;flex:0 0 auto;justify-content:center;}
+
 .todaybadge{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.14em;
   color:var(--paper);background:var(--ink);padding:4px 8px;border-radius:99px;}
 .stop[data-today="true"] .dot{box-shadow:0 0 0 4px var(--paper),0 0 0 6px var(--ink);}
@@ -274,6 +287,7 @@ input.mono{font-family:'IBM Plex Mono',monospace;font-size:14px;}
 /* ============================ constants ============================ */
 const KEY = "tripplan.v1";
 const SYNC_KEY = "tripplan.sync";
+const TRIPS_KEY = "tripplan.trips";
 const API = "https://api.jsonbin.io/v3";
 const LINES = ["var(--l1)","var(--l2)","var(--l3)","var(--l4)",
                "var(--l5)","var(--l6)","var(--l7)","var(--l8)"];
@@ -292,39 +306,109 @@ const SLOTS = [
 const TOMBSTONE_DAYS = 60;
 
 /* ============================ state ============================ */
-let state = {
-  trip:{ name:"Lanzarote", startDate:"2026-08-15", dayCount:12, party:2, currency:"€", updatedAt:0 },
-  items:[]
-};
+/* Each trip lives under its own keys (tripplan.v1.<id>, tripplan.sync.<id>).
+   tripsIndex is the small directory of all trips; `state`/`sync` always hold
+   whichever one is active right now, and are swapped wholesale on switchTrip(). */
+let tripsIndex = { activeId: null, list: [] };
+function blankTripState(){
+  return { trip:{ name:"", startDate:"", dayCount:7, party:2, currency:"€", updatedAt:0 }, items:[] };
+}
+let state = blankTripState();
 let sync = { key:"", bin:"", status:"off", lastSync:0, message:"" };
 let ui = { pane:"route", activeDay:null, openId:null, confirmId:null };
 
-function loadLocal(){
+function tripStateKey(id){ return KEY + "." + id; }
+function tripSyncKey(id){ return SYNC_KEY + "." + id; }
+function saveTripsIndex(){ try{ localStorage.setItem(TRIPS_KEY, JSON.stringify(tripsIndex)); }catch(e){} }
+function writeTripState(id, obj){ try{ localStorage.setItem(tripStateKey(id), JSON.stringify(obj)); }catch(e){} }
+
+function loadActiveTripState(){
+  state = blankTripState();
   try{
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(tripStateKey(tripsIndex.activeId));
     if(raw){
       const p = JSON.parse(raw);
       if(p.trip) Object.assign(state.trip, p.trip);
       if(Array.isArray(p.items)) state.items = p.items;
     }
   }catch(e){}
+}
+function loadActiveTripSync(){
+  sync = { key:"", bin:"", status:"off", lastSync:0, message:"" };
   try{
-    const raw = localStorage.getItem(SYNC_KEY);
+    const raw = localStorage.getItem(tripSyncKey(tripsIndex.activeId));
     if(raw) Object.assign(sync, JSON.parse(raw));
   }catch(e){}
   sync.status = sync.bin && sync.key ? "idle" : "off";
 }
+
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(TRIPS_KEY);
+    if(raw){
+      const p = JSON.parse(raw);
+      if(p && Array.isArray(p.list) && p.list.length) tripsIndex = p;
+    }
+  }catch(e){}
+
+  if(!tripsIndex.list.length) migrateLegacy();
+
+  if(!tripsIndex.activeId || !tripsIndex.list.some(function(t){ return t.id === tripsIndex.activeId; })){
+    tripsIndex.activeId = tripsIndex.list[0].id;
+    saveTripsIndex();
+  }
+
+  loadActiveTripState();
+  loadActiveTripSync();
+}
+
+/* one-time move from the old single-trip keys into the first entry of tripsIndex */
+function migrateLegacy(){
+  const id = uid();
+  let legacy = null;
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw) legacy = JSON.parse(raw);
+  }catch(e){}
+
+  const fresh = blankTripState();
+  if(legacy && (legacy.trip || Array.isArray(legacy.items))){
+    if(legacy.trip) Object.assign(fresh.trip, legacy.trip);
+    if(Array.isArray(legacy.items)) fresh.items = legacy.items;
+  } else {
+    /* brand new install — seed with an example so the app isn't blank */
+    Object.assign(fresh.trip, { name:"Lanzarote", startDate:"2026-08-15", dayCount:12, party:2, currency:"€" });
+  }
+  writeTripState(id, fresh);
+
+  try{
+    const legacySync = localStorage.getItem(SYNC_KEY);
+    if(legacySync) localStorage.setItem(tripSyncKey(id), legacySync);
+  }catch(e){}
+  try{ localStorage.removeItem(KEY); localStorage.removeItem(SYNC_KEY); }catch(e){}
+
+  tripsIndex = {
+    activeId: id,
+    list: [{ id:id, name:fresh.trip.name||"", startDate:fresh.trip.startDate||"", dayCount:fresh.trip.dayCount||1 }]
+  };
+  saveTripsIndex();
+}
+
 let saveTimer;
 function saveLocal(push){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(function(){
-    try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+    try{ localStorage.setItem(tripStateKey(tripsIndex.activeId), JSON.stringify(state)); }
     catch(e){ toast("Couldn't save on this device — storage may be full."); }
     if(push !== false) schedulePush();
   }, 200);
 }
+function flushSave(){
+  clearTimeout(saveTimer);
+  try{ localStorage.setItem(tripStateKey(tripsIndex.activeId), JSON.stringify(state)); }catch(e){}
+}
 function saveSync(){
-  try{ localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); }catch(e){}
+  try{ localStorage.setItem(tripSyncKey(tripsIndex.activeId), JSON.stringify(sync)); }catch(e){}
 }
 
 /* ============================ helpers ============================ */
@@ -528,7 +612,19 @@ function removeItem(id){
   ui.openId = null; ui.confirmId = null;
   saveLocal(); render();
 }
-function touchTrip(){ state.trip.updatedAt = now(); saveLocal(); }
+function touchTrip(){
+  state.trip.updatedAt = now();
+  saveLocal();
+  syncIndexMeta();
+}
+function syncIndexMeta(){
+  const e = tripsIndex.list.find(function(t){ return t.id === tripsIndex.activeId; });
+  if(!e) return;
+  e.name = state.trip.name || "";
+  e.startDate = state.trip.startDate || "";
+  e.dayCount = state.trip.dayCount || 1;
+  saveTripsIndex();
+}
 function purgeOld(){
   const cutoff = now() - TOMBSTONE_DAYS*86400000;
   state.items = state.items.filter(i => !(i.deleted && (i.updatedAt||0) < cutoff));
@@ -595,7 +691,8 @@ async function pull(){
     if(remote && (Array.isArray(remote.items) || remote.trip)){
       state = mergeStates(state, remote);
       purgeOld();
-      try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+      flushSave();
+      syncIndexMeta();
       render();
     }
     sync.lastSync = now();
@@ -940,6 +1037,153 @@ function openSettings(){
   });
 }
 
+/* ============================ trips ============================ */
+function fmtRangeFor(meta){
+  const dc = meta.dayCount || 1;
+  const label = dc + (dc === 1 ? " day" : " days");
+  if(!meta.startDate) return label + "  ·  no dates set";
+  const p = meta.startDate.split("-").map(Number);
+  if(!p[0] || !p[1] || !p[2]) return label;
+  const start = new Date(p[0], p[1]-1, p[2]);
+  const end = new Date(p[0], p[1]-1, p[2] + Math.max(1, dc) - 1);
+  const fmt = function(d){ return d.toLocaleDateString(undefined,{day:"numeric",month:"short"}); };
+  return fmt(start) + " – " + fmt(end) + "  ·  " + label;
+}
+
+function switchTrip(id){
+  if(id === tripsIndex.activeId) return;
+  flushSave();
+  clearTimeout(pushTimer); pushTimer = null; pendingPush = false;
+  tripsIndex.activeId = id;
+  saveTripsIndex();
+  loadActiveTripState();
+  loadActiveTripSync();
+  purgeOld();
+  ui = { pane:"route", activeDay:null, openId:null, confirmId:null };
+  const t0 = todayIndex();
+  if(t0 !== null) ui.activeDay = t0;
+  render();
+  if(connected()) pull();
+}
+
+function createTrip(){
+  flushSave();
+  clearTimeout(pushTimer); pushTimer = null; pendingPush = false;
+  const id = uid();
+  const fresh = blankTripState();
+  fresh.trip.party = party();
+  fresh.trip.currency = currency();
+  fresh.trip.updatedAt = now();
+  writeTripState(id, fresh);
+  tripsIndex.list.push({ id:id, name:"", startDate:"", dayCount:fresh.trip.dayCount });
+  tripsIndex.activeId = id;
+  saveTripsIndex();
+  loadActiveTripState();
+  loadActiveTripSync();
+  ui = { pane:"route", activeDay:null, openId:null, confirmId:null };
+  render();
+  toast("New trip started");
+  setTimeout(openSettings, 150);
+}
+
+function duplicateTrip(id){
+  if(id === tripsIndex.activeId) flushSave();
+  let src;
+  try{ src = JSON.parse(localStorage.getItem(tripStateKey(id)) || "null"); }catch(e){ src = null; }
+  if(!src) return;
+  const newId = uid();
+  const copy = {
+    trip: Object.assign(blankTripState().trip, src.trip, {
+      name: (src.trip && src.trip.name ? src.trip.name : "Trip") + " copy",
+      updatedAt: now()
+    }),
+    items: (src.items || []).filter(function(i){ return !i.deleted; }).map(function(i){
+      return Object.assign({}, i, { id: uid() });
+    })
+  };
+  writeTripState(newId, copy);
+  const at = tripsIndex.list.findIndex(function(t){ return t.id === id; });
+  tripsIndex.list.splice(at === -1 ? tripsIndex.list.length : at+1, 0,
+    { id:newId, name:copy.trip.name, startDate:copy.trip.startDate, dayCount:copy.trip.dayCount });
+  saveTripsIndex();
+}
+
+function deleteTrip(id){
+  if(tripsIndex.list.length <= 1){ toast("Keep at least one trip."); return; }
+  const at = tripsIndex.list.findIndex(function(t){ return t.id === id; });
+  if(at === -1) return;
+  tripsIndex.list.splice(at, 1);
+  try{ localStorage.removeItem(tripStateKey(id)); }catch(e){}
+  try{ localStorage.removeItem(tripSyncKey(id)); }catch(e){}
+  if(id === tripsIndex.activeId){
+    clearTimeout(pushTimer); pushTimer = null; pendingPush = false;
+    const next = tripsIndex.list[Math.max(0, at-1)] || tripsIndex.list[0];
+    tripsIndex.activeId = next.id;
+    saveTripsIndex();
+    loadActiveTripState();
+    loadActiveTripSync();
+    ui = { pane:"route", activeDay:null, openId:null, confirmId:null };
+    const t0 = todayIndex();
+    if(t0 !== null) ui.activeDay = t0;
+    render();
+  } else {
+    saveTripsIndex();
+  }
+}
+
+function renameTripPrompt(id, currentName){
+  const name = prompt("Trip name", currentName || "");
+  if(name === null) return;
+  const trimmed = name.trim();
+  if(id === tripsIndex.activeId){
+    state.trip.name = trimmed;
+    touchTrip();
+    renderHeader();
+  } else {
+    try{
+      const obj = JSON.parse(localStorage.getItem(tripStateKey(id)) || "null") || blankTripState();
+      obj.trip.name = trimmed;
+      obj.trip.updatedAt = now();
+      localStorage.setItem(tripStateKey(id), JSON.stringify(obj));
+    }catch(e){}
+    const meta = tripsIndex.list.find(function(t){ return t.id === id; });
+    if(meta) meta.name = trimmed;
+    saveTripsIndex();
+  }
+}
+
+function openTrips(){
+  openSheet("Your trips", function(body, redraw, close){
+    if(!tripsIndex.list.length){
+      body.appendChild(h("div",{class:"empty"},["No trips yet."]));
+      return;
+    }
+    tripsIndex.list.forEach(function(t){
+      const active = t.id === tripsIndex.activeId;
+      body.appendChild(h("div",{class:"triprow","data-active":active},[
+        h("button",{class:"triprow-main",onclick:function(){ switchTrip(t.id); close(); }},[
+          h("span",{class:"triprow-name",text:t.name || "Untitled trip"}),
+          h("span",{class:"triprow-meta",text:fmtRangeFor(t)}),
+          active ? h("span",{class:"triprow-badge",text:"Current"}) : null
+        ]),
+        h("div",{class:"triprow-actions"},[
+          h("button",{class:"iconbtn small","aria-label":"Rename trip",title:"Rename",
+            onclick:function(){ renameTripPrompt(t.id, t.name); redraw(); }},["✎"]),
+          h("button",{class:"iconbtn small","aria-label":"Duplicate trip",title:"Duplicate",
+            onclick:function(){ duplicateTrip(t.id); redraw(); toast("Duplicated"); }},["⧉"]),
+          h("button",{class:"iconbtn small","aria-label":"Delete trip",title:"Delete","data-danger":"true",
+            onclick:function(){
+              if(!confirm("Delete \"" + (t.name || "this trip") + "\"? This can't be undone.")) return;
+              deleteTrip(t.id); redraw();
+            }},["🗑"])
+        ])
+      ]));
+    });
+  }, function(foot, redraw, close){
+    foot.appendChild(h("button",{class:"btn cta",onclick:function(){ close(); createTrip(); }},["+ New trip"]));
+  });
+}
+
 /* ============================ share / backup ============================ */
 function buildText(){
   const t = state.trip;
@@ -1124,6 +1368,8 @@ function headerNode(){
         ]),
         costChip()
       ]),
+      h("button",{class:"iconbtn","aria-label":"Your trips",title:"Trips",
+        onclick:openTrips},["✈"]),
       h("button",{class:"iconbtn","aria-label":"Change theme",title:"Theme",
         onclick:cycleTheme},[(THEMES.find(x=>x.id===themePref())||THEMES[0]).glyph]),
       h("button",{class:"iconbtn","aria-label":"Trip settings",onclick:openSettings},["⚙"])
